@@ -43,8 +43,8 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 		$this->secret							= get_option('billmate_common_secret');//( isset( $this->settings['secret'] ) ) ? $this->settings['secret'] : '';
 		$this->logo 				= get_option('billmate_common_logo');
 
-		$this->lower_threshold					= ( isset( $this->settings['lower_threshold'] ) ) ? $this->settings['lower_threshold'] : '';
-		$this->upper_threshold					= ( isset( $this->settings['upper_threshold'] ) ) ? $this->settings['upper_threshold'] : '';
+		$this->lower_threshold					= ( isset( $this->settings['lower_threshold'] ) AND $this->settings['lower_threshold'] != '' ) ? floatval(str_replace(",",".",$this->settings['lower_threshold'])) : '';
+		$this->upper_threshold					= ( isset( $this->settings['upper_threshold'] ) AND $this->settings['upper_threshold'] != '' ) ? floatval(str_replace(",",".",$this->settings['upper_threshold'])) : '';
 		$this->show_monthly_cost				= ( isset( $this->settings['show_monthly_cost'] ) ) ? $this->settings['show_monthly_cost'] : '';
 		$this->show_monthly_cost_info			= ( isset( $this->settings['show_monthly_cost_info'] ) ) ? $this->settings['show_monthly_cost_info'] : '';
 		$this->show_monthly_cost_prio			= ( isset( $this->settings['show_monthly_cost_prio'] ) ) ? $this->settings['show_monthly_cost_prio'] : '15';
@@ -66,57 +66,13 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 		// Country and language
 		$countrytmp = $this->shop_country;
 
-		switch ( $countrytmp )
-		{
-		case 'DK':
-			$billmate_country = 'DK';
-			$billmate_language = 'DA';
-			$billmate_currency = 'DKK';
-			$billmate_partpayment_info = 'https://online.billmate.com/account_dk.yaws?eid=' . $this->eid;
-			break;
-		case 'DE' :
-			$billmate_country = 'DE';
-			$billmate_language = 'DE';
-			$billmate_currency = 'EUR';
-			$billmate_partpayment_info = 'https://online.billmate.com/account_de.yaws?eid=' . $this->eid;
-			break;
-		case 'NL' :
-			$billmate_country = 'NL';
-			$billmate_language = 'NL';
-			$billmate_currency = 'EUR';
-			$billmate_partpayment_info = 'https://online.billmate.com/account_nl.yaws?eid=' . $this->eid;
-			$billmate_partpayment_icon = 'https://cdn.billmate.com/public/images/NL/badges/v1/account/NL_account_badge_std_blue.png?width=60&eid=' . $this->eid;
-			$billmate_basic_icon = 'https://cdn.billmate.com/public/images/NL/logos/v1/basic/NL_basic_logo_std_blue-black.png?width=60&eid=' . $this->eid;
-			break;
-		case 'NO' :
-			$billmate_country = 'NO';
-			$billmate_language = 'NB';
-			$billmate_currency = 'NOK';
-			$billmate_partpayment_info = 'https://online.billmate.com/account_no.yaws?eid=' . $this->eid;
-			break;
-		case 'FI' :
-			$billmate_country = 'FI';
-			$billmate_language = 'FI';
-			$billmate_currency = 'EUR';
-			$billmate_partpayment_info = 'https://online.billmate.com/account_fi.yaws?eid=' . $this->eid;
-			break;
-		case 'SE' :
-			$billmate_country = 'SE';
-			$billmate_language = 'SV';
-			$billmate_currency = 'SEK';
-			$billmate_partpayment_info = 'https://online.billmate.com/account_se.yaws?eid=' . $this->eid;
-			break;
-		default:
-			$billmate_country = '';
-			$billmate_language = '';
-			$billmate_currency = '';
-			$billmate_partpayment_info = '';
-		}
-
-
-
-		$billmate_partpayment_icon = plugins_url( '/images/bm_delbetalning_l.png', __FILE__ );
-		$billmate_basic_icon = plugins_url( '/images/bm_delbetalning_l.png', __FILE__ );
+        $country_data               = self::get_country_data();
+        $billmate_country           = isset($country_data['billmate_country']) ? $country_data['billmate_country'] : '';
+        $billmate_language          = isset($country_data['billmate_language']) ? $country_data['billmate_language'] : '';
+        $billmate_currency          = isset($country_data['billmate_currency']) ? $country_data['billmate_currency'] : '';
+        $billmate_partpayment_info  = isset($country_data['billmate_partpayment_info']) ? $country_data['billmate_partpayment_info'] : '';
+        $billmate_partpayment_icon  = isset($country_data['billmate_partpayment_icon']) ? $country_data['billmate_partpayment_icon'] : '';
+        $billmate_basic_icon        = isset($country_data['billmate_basic_icon']) ? $country_data['billmate_basic_icon'] : '';
 
 		// Apply filters to Country and language
 		$this->billmate_country 					= apply_filters( 'billmate_country', $billmate_country );
@@ -140,7 +96,7 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 
 		add_action('admin_init', array(&$this, 'update_billmatepclasses_from_billmate'));
 
-		add_action('woocommerce_single_product_summary', array(&$this, 'print_product_monthly_cost'), $this->show_monthly_cost_prio);
+        add_action('woocommerce_single_product_summary', 'WC_Gateway_Billmate_Partpayment::print_product_monthly_cost', $this->show_monthly_cost_prio);
 
 		add_action('woocommerce_checkout_process', array(&$this, 'billmate_partpayment_checkout_field_process'));
 
@@ -149,6 +105,75 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 
         add_action('admin_enqueue_scripts',array(&$this,'injectscripts'));
 
+    }
+
+    static function get_country_data() {
+        $eid = get_option('billmate_common_eid');
+        $shop_country = get_option('woocommerce_default_country');
+
+        // Check if woocommerce_default_country includes state as well. If it does, remove state
+        if (strstr($shop_country, ':')) {
+            $shop_country = current(explode(':', $shop_country));
+        }
+
+        switch ($shop_country) {
+            case 'DK':
+                $billmate_country = 'DK';
+                $billmate_language = 'DA';
+                $billmate_currency = 'DKK';
+                $billmate_partpayment_info = 'https://online.billmate.com/account_dk.yaws?eid=' . $eid;
+                break;
+            case 'DE' :
+                $billmate_country = 'DE';
+                $billmate_language = 'DE';
+                $billmate_currency = 'EUR';
+                $billmate_partpayment_info = 'https://online.billmate.com/account_de.yaws?eid=' . $eid;
+                break;
+            case 'NL' :
+                $billmate_country = 'NL';
+                $billmate_language = 'NL';
+                $billmate_currency = 'EUR';
+                $billmate_partpayment_info = 'https://online.billmate.com/account_nl.yaws?eid=' . $eid;
+                $billmate_partpayment_icon = 'https://cdn.billmate.com/public/images/NL/badges/v1/account/NL_account_badge_std_blue.png?width=60&eid=' . $eid;
+                $billmate_basic_icon = 'https://cdn.billmate.com/public/images/NL/logos/v1/basic/NL_basic_logo_std_blue-black.png?width=60&eid=' . $eid;
+                break;
+            case 'NO' :
+                $billmate_country = 'NO';
+                $billmate_language = 'NB';
+                $billmate_currency = 'NOK';
+                $billmate_partpayment_info = 'https://online.billmate.com/account_no.yaws?eid=' . $eid;
+                break;
+            case 'FI' :
+                $billmate_country = 'FI';
+                $billmate_language = 'FI';
+                $billmate_currency = 'EUR';
+                $billmate_partpayment_info = 'https://online.billmate.com/account_fi.yaws?eid=' . $eid;
+                break;
+            case 'SE' :
+                $billmate_country = 'SE';
+                $billmate_language = 'SV';
+                $billmate_currency = 'SEK';
+                $billmate_partpayment_info = 'https://online.billmate.com/account_se.yaws?eid=' . $eid;
+                break;
+            default:
+                $billmate_country = '';
+                $billmate_language = '';
+                $billmate_currency = '';
+                $billmate_partpayment_info = '';
+        }
+
+        $billmate_partpayment_icon = plugins_url( '/images/bm_delbetalning_l.jpg', __FILE__ );
+        $billmate_basic_icon = plugins_url( '/images/bm_delbetalning_l.jpg', __FILE__ );
+
+        $return = array(
+            "billmate_country"          => $billmate_country,
+            "billmate_language"         => $billmate_language,
+            "billmate_currency"         => $billmate_currency,
+            "billmate_partpayment_info" => $billmate_partpayment_info,
+            "billmate_partpayment_icon" => $billmate_partpayment_icon,
+            "billmate_basic_icon"       => $billmate_basic_icon
+        );
+        return $return;
     }
 
     public function injectscripts(){
@@ -189,7 +214,7 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 							'title' => __( 'Enable/Disable', 'billmate' ),
 							'type' => 'checkbox',
 							'label' => __( 'Enable Billmate Part Payment', 'billmate' ),
-							'default' => 'yes'
+							'default' => 'no'
 						),
 			'title' => array(
 							'title' => __( 'Title', 'billmate' ),
@@ -306,7 +331,10 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
     	?>
     	<h3><?php _e('Billmate Part Payment', 'billmate'); ?></h3>
 	    	<p><?php _e('With Billmate your customers can pay by partpayment. Billmate works by adding extra personal information fields and then sending the details to Billmate for verification.', 'billmate'); ?></p>
-
+            <p>
+                <a href="https://billmate.se/plugins/manual/Installationsmanual_Woocommerce_Billmate.pdf" target="_blank">Installationsmanual Billmate Modul ( Manual Svenska )</a><br />
+                <a href="https://billmate.se/plugins/manual/Installation_Manual_Woocommerce_Billmate.pdf" target="_blank">Installation Manual Billmate ( Manual English )</a>
+            </p>
 
 		    <?php
 
@@ -366,8 +394,9 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 			?>
 			<p>
 		    <a class="button" href="<?php echo admin_url('admin.php?'.$_SERVER['QUERY_STRING'].'&billmatePclassListener=1');?>"><?php _e('Update Paymentplans', 'billmate'); ?> </a>
+				<a class="button" href="<?php echo admin_url('admin.php?'.$_SERVER['QUERY_STRING'].'&billmatePclassListener=1&resetPclasses=1');?>"><?php _e('Clear Paymentplans', 'billmate'); ?> </a>
 
-		    </p>
+			</p>
     	<table class="form-table">
     	<?php
     		// Generate the HTML For the settings form.
@@ -430,10 +459,37 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 		global $woocommerce;
 
 		if ($this->enabled=="yes") :
-			if (!in_array(get_option('woocommerce_currency'), array('SEK'))) return false;
+
+            if(is_checkout() == false && is_checkout_pay_page() == false) {
+                // Not on store checkout page
+                return true;
+            }
+
+            if (!in_array(get_option('woocommerce_currency'), array('SEK')) OR get_woocommerce_currency() != 'SEK') {
+                return false;
+            }
 
 			$allowed_countries = array_intersect(array('SE'),is_array($this->allowed_countries) ? $this->allowed_countries : array($this->allowed_countries));
-			if(is_array($this->allowed_countries) && !in_array($woocommerce->customer->get_country() , $allowed_countries)){
+			$order_id = absint( get_query_var( 'order-pay' ) );
+			if(0 < $order_id){
+				$order = wc_get_order( $order_id );
+				$address = $order->get_address();
+				$country = $address['country'];
+			} else {
+				$country = "";
+                if(isset($woocommerce) &&
+                    is_object($woocommerce) &&
+                    isset($woocommerce->customer) &&
+                    is_object($woocommerce->customer)
+                ) {
+                    if(version_compare(WC_VERSION, '3.0.0', '>=') AND method_exists($woocommerce->customer, "get_billing_country")) {
+                        $country = $woocommerce->customer->get_billing_country();
+                    } elseif(method_exists($woocommerce->customer, "get_country")) {
+                        $country = $woocommerce->customer->get_country();
+                    }
+                }
+			}
+			if(is_array($this->allowed_countries) && !in_array($country , $allowed_countries)){
 				return false;
 			}
 			$pclasses_not_available = true;
@@ -441,7 +497,7 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 			$pclasses = get_option('wc_gateway_billmate_partpayment_pclasses',false);
 
 			if($pclasses){
-				$billmate_cart_total = $woocommerce->cart->total;
+				$billmate_cart_total = WC_Payment_Gateway::get_order_total();
 				$sum = apply_filters( 'billmate_cart_total', $billmate_cart_total ); // Cart total.
                 $fees = $woocommerce->cart->get_fees();
                 $availableFees = array();
@@ -528,7 +584,12 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 
  		global $woocommerce;
 			register_setting('wc_gateway_billmate_partpayment','pclasses');
+
  		if (isset($_GET['billmatePclassListener']) && $_GET['billmatePclassListener'] == '1'):
+			if(isset($_GET['resetPclasses']) && $_GET['resetPclasses'] == '1'):
+				update_option('wc_gateway_billmate_partpayment_pclasses',false);
+			endif;
+
 
 			// Test mode or Live mode
 			if ( $this->testmode == 'yes' ):
@@ -555,7 +616,7 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 			$currency = $this->billmate_currency;
 
 
-			$k = new BillMate($eid,$secret,true, $this->testmode == 'yes',false);
+			$k = new BillMate( $eid, $secret, true, $this->testmode == 'yes', false, $this->getRequestMeta() );
 
 
 			try {
@@ -656,6 +717,13 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 
 		// Show billmate_warning_banner if NL
 		?>
+        <?php
+        if(isset($_GET['pay_for_order']) && isset($_SESSION['address_verification']) && (isset($_POST['billmate_pno']) && $_POST['billmate_pno'] != '')) {
+            echo $_SESSION['address_verification'];
+            unset($_SESSION['address_verification']);
+        }
+        ?>
+
 
 		<fieldset>
 			<p class="form-row">
@@ -689,6 +757,7 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
 			?>
 			<div class="clear"></div>
 
+            <?php if (get_option('billmate_common_getaddress') != 'active') : ?>
 			<p class="form-row" id="partpay_pno">
 				<?php if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) : ?>
 
@@ -834,10 +903,11 @@ class WC_Gateway_Billmate_Partpayment extends WC_Gateway_Billmate {
                     </select>
 
 				<?php else : ?>
-					<label for="billmate_pno"><?php echo __("Social Security Number / Corporate Registration Number", 'billmate') ?> <span class="required">*</span></label>
-					<input type="text" class="input-text" name="billmate_pno" />
+					<label for="billmate_pno"><?php echo __("Social Security Number", 'billmate') ?> <span class="required">*</span></label>
+					<input type="text" class="input-text" name="billmate_pno" value="<?php echo isset($_POST['billmate_pno']) ? $_POST['billmate_pno'] : '' ?>"/>
 				<?php endif; ?>
 			</p>
+            <?php endif; ?>
 
 			<?php if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) : ?>
 				<p class="form-row form-row-last">
@@ -860,8 +930,8 @@ parse_str($_POST['post_data'], $datatemp);
 ?>
 		<div class="clear"></div>
 			<p class="form-row">
-				<input type="checkbox" class="input-checkbox" checked="checked" value="yes" name="valid_email_it_is" id="valid_email_it_is" style="float:left;margin-top:6px" />
-				<label><?php echo sprintf(__('My e-mail%s is correct och and may be used for billing. I confirm the ', 'billmate'), (strlen($datatemp['billing_email']) > 0) ? ', '.$datatemp['billing_email'].',' : ' '); ?><a href="https://billmate.se/billmate/?cmd=villkor_delbetalning" onclick="window.open(this.href,'targetWindow','toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=600,height=650');return false;"><?php echo __('terms of partpayment','billmate'); ?></a> <?php echo __('and accept the liability.','billmate') ?></label>
+				<input type="checkbox" class="input-checkbox" value="yes" name="valid_email_it_is" id="valid_email_it_is" style="float:left;margin-top:6px" />
+				<label><?php echo sprintf(__('My e-mail%s is correct och and may be used for billing. I confirm the ', 'billmate'), (strlen($datatemp['billing_email']) > 0) ? ', '.$datatemp['billing_email'].',' : ' '); ?><a class="billmateCheckoutTermLink" href="https://billmate.se/billmate/?cmd=villkor_delbetalning" onclick="window.open(this.href,'targetWindow','toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=600,height=650');return false;"><?php echo __('terms of partpayment','billmate'); ?></a>, <a class="billmateCheckoutTermLink" href="https://www.billmate.se/integritetspolicy/" onclick="window.open(this.href,'targetWindow','toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=600,height=650');return false;"><?php echo __('Privacy Policy','billmate'); ?></a> <?php echo __('and accept the liability.','billmate') ?></label>
 			</p>
 
 			<?php if ( $this->shop_country == 'DE' && $this->de_consent_terms == 'yes' ) : ?>
@@ -905,7 +975,7 @@ parse_str($_POST['post_data'], $datatemp);
 		$language = explode('_',get_locale());
 		if(!defined('BILLMATE_LANGUAGE')) define('BILLMATE_LANGUAGE',strtolower($language[0]));
 
-		$k = new BillMate($eid,$secret,true, $settings['testmode'] == 'yes',false);
+		$k = new BillMate( $eid, $secret, true, $settings['testmode'] == 'yes', false, $this->getRequestMeta() );
 
 
 		try {
@@ -922,7 +992,7 @@ parse_str($_POST['post_data'], $datatemp);
 				throw new Exception($data);
 			}
 			if(isset($data['code'])){
-				throw new Exception($data);
+				throw new Exception($data['message']);
 			}
 			$output = array();
 			$i = 0;
@@ -1116,10 +1186,22 @@ parse_str($_POST['post_data'], $datatemp);
  			// SE, NO, DK & FI
  			if ( $this->shop_country == 'SE' || $this->shop_country == 'NO' || $this->shop_country == 'DK' || $this->shop_country == 'FI' ){
 
-    			// Check if set, if its not set add an error.
-    			if (!$_POST['billmate_pno'])
-        		 	wc_bm_errors( '<i data-error-code="9015"></i>'.__('Non Valid Person / Corporate number. Check the number.', 'billmate') );
+                $post_pno = '';
+                if (isset($_POST['pno']) && $_POST['pno'] != '' && get_option('billmate_common_getaddress') == 'active') {
+                    $post_pno = $_POST['pno'];
+                } else {
+                    $post_pno = isset($_POST['billmate_pno']) ? $_POST['billmate_pno'] : '';
+                }
+                if(version_compare(WC_VERSION, '3.0.0', '>=')) {
+                    $post_pno = wc_clean($post_pno);
+                } else {
+                    $post_pno = woocommerce_clean($post_pno);
+                }
 
+                if ($post_pno == '') {
+                    // Missing pno, show error
+                    wc_bm_errors( '<i data-error-code="9015"></i>'.__('Non Valid Person / Corporate number. Check the number.', 'billmate') );
+                }
 			}
 
 			// NL & DE
@@ -1164,25 +1246,257 @@ parse_str($_POST['post_data'], $datatemp);
 
 	public function validate_fields()
 	{
-		$this->getAddress();
+
 	}
 
-	public function getAddress( )
+
+	public function getAddressPayment(&$order)
 	{
+
+        $billmateOrder = new BillmateOrder($order);
+
 		// Collect the dob different depending on country
-		if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) :
-			$billmate_pno_day 			= isset($_POST['billmate_date_of_birth_day']) ? woocommerce_clean($_POST['billmate_date_of_birth_day']) : '';
-			$billmate_pno_month 			= isset($_POST['billmate_date_of_birth_month']) ? woocommerce_clean($_POST['billmate_date_of_birth_month']) : '';
-			$billmate_pno_year 			= isset($_POST['billmate_date_of_birth_year']) ? woocommerce_clean($_POST['billmate_date_of_birth_year']) : '';
+        if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) {
+			$billmate_pno_day 			= isset($_POST['date_of_birth_day']) ? $this->woocommerce_clean($_POST['date_of_birth_day']) : '';
+			$billmate_pno_month 			= isset($_POST['date_of_birth_month']) ? $this->woocommerce_clean($_POST['date_of_birth_month']) : '';
+			$billmate_pno_year 			= isset($_POST['date_of_birth_year']) ? $this->woocommerce_clean($_POST['date_of_birth_year']) : '';
 			$billmate_pno 				= $billmate_pno_day . $billmate_pno_month . $billmate_pno_year;
-		else :
-			$billmate_pno 				= isset($_POST['billmate_pno']) ? woocommerce_clean($_POST['billmate_pno']) : '';
-		endif;
+        } else {
+            if (isset($_POST['pno']) && $_POST['pno'] != '' && get_option('billmate_common_getaddress') == 'active') {
+                $billmate_pno = $this->woocommerce_clean($_POST['pno']);
+            } else {
+                $billmate_pno = isset($_POST['billmate_pno']) ? $this->woocommerce_clean($_POST['billmate_pno']) : '';
+            }
+        }
+
 		if($billmate_pno == ''){
 			return;
 		}
-		$billmate_gender 					= isset($_POST['billmate_gender']) ? woocommerce_clean($_POST['billmate_gender']) : '';
-		$billmate_de_consent_terms		= isset($_POST['billmate_de_consent_terms']) ? woocommerce_clean($_POST['billmate_de_consent_terms']) : '';
+		$billmate_gender 					= isset($_POST['billmate_partpayment_gender']) ? $this->woocommerce_clean($_POST['billmate_partpayment_gender']) : '';
+		$billmate_de_consent_terms		= isset($_POST['billmate_de_consent_terms']) ? $this->woocommerce_clean($_POST['billmate_de_consent_terms']) : '';
+		// Split address into House number and House extension for NL & DE customers
+		if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) {
+			require_once('split-address.php');
+			$billmate_billing_address				= $order->billing_address_1;
+			$splitted_address 					= splitAddress($billmate_billing_address);
+			$billmate_billing_address				= $splitted_address[0];
+			$billmate_billing_house_number		= $splitted_address[1];
+			$billmate_billing_house_extension		= $splitted_address[2];
+			$billmate_shipping_address			= !empty($order->shipping_address_1) ? $order->shipping_address_1 : $billmate_billing_address;
+			$splitted_address 					= splitAddress($billmate_shipping_address);
+			$billmate_shipping_address			= $splitted_address[0];
+			$billmate_shipping_house_number		= $splitted_address[1];
+			$billmate_shipping_house_extension	= $splitted_address[2];
+		} else {
+
+            if ($billmateOrder->is_wc3()) {
+                $billmate_billing_address           = $order->get_billing_address_1();
+                $billmate_billing_house_number      = '';
+                $billmate_billing_house_extension   = '';
+                $billmate_shipping_address          = $order->get_shipping_address_1();
+                $billmate_shipping_address          = ($billmate_shipping_address != '') ? $billmate_shipping_address : $billmate_billing_address;
+                $billmate_shipping_house_number     = '';
+                $billmate_shipping_house_extension  = '';
+            } else {
+                $billmate_billing_address           = $order->billing_address_1;
+                $billmate_billing_house_number      = '';
+                $billmate_billing_house_extension   = '';
+                $billmate_shipping_address          = !empty($order->shipping_address_1) ? $order->shipping_address_1 : $billmate_billing_address;
+                $billmate_shipping_house_number     = '';
+                $billmate_shipping_house_extension  = '';
+            }
+		}
+		$language = explode('_',get_locale());
+		if(!defined('BILLMATE_LANGUAGE')) define('BILLMATE_LANGUAGE',strtolower($language[0]));
+
+
+		$k = new Billmate( $this->eid, $this->secret, true, $this->testmode == 'yes', false, $this->getRequestMeta() );
+		try{
+			$addr = $k->getAddress(array('pno' => $billmate_pno));
+		}catch( Exception $ex ){
+			wc_bm_errors( utf8_encode($ex->getMessage()) );
+			return;
+		}
+
+		if( !is_array( $addr ) ) {
+			wc_bm_errors( __('Unable to find address.'.$addr, 'billmate') );
+			return;
+		}
+		if(isset($addr['code'])){
+			wc_bm_errors('<span data-error-code="'.$addr['code'].'"></span>'.utf8_encode($addr['message']));
+			return;
+		}
+		foreach($addr as $key => $value){
+			$addr[$key] = utf8_encode(utf8_decode($value));
+		}
+
+
+        if ($billmateOrder->is_wc3()) {
+            $billing_first_name     = $order->get_billing_first_name();
+            $billing_last_name      = $order->get_billing_last_name();
+            $billing_company        = $order->get_billing_company();
+            $billing_address_1      = $order->get_billing_address_1();
+            $billing_postcode       = $order->get_billing_postcode();
+            $billing_city           = $order->get_billing_city();
+            $billing_country        = $order->get_billing_country();
+
+            $shipping_first_name    = $order->get_shipping_first_name();
+            $shipping_last_name     = $order->get_shipping_last_name();
+            $shipping_company       = $order->get_shipping_company();
+            $shipping_address_1     = $order->get_shipping_address_1();
+            $shipping_postcode      = $order->get_shipping_postcode();
+            $shipping_city          = $order->get_shipping_city();
+            $shipping_country       = $order->get_shipping_country();
+
+            $usership = $billing_first_name.' '.$billing_last_name.' '.$billing_company;
+            $userbill = $shipping_first_name.' '.$shipping_last_name.' '.$shipping_company;
+            $userbill = (trim($userbill) != '') ? $userbill : $usership;
+        } else {
+            $billing_first_name     = $order->billing_first_name;
+            $billing_last_name      = $order->billing_last_name;
+            $billing_company        = $order->billing_company;
+            $billing_address_1      = $order->billing_address_1;
+            $billing_postcode       = $order->billing_postcode;
+            $billing_city           = $order->billing_city;
+            $billing_country        = $order->billing_country;
+
+            $shipping_first_name    = $order->shipping_first_name;
+            $shipping_last_name     = $order->shipping_last_name;
+            $shipping_company       = $order->shipping_company;
+            $shipping_address_1     = $order->shipping_address_1;
+            $shipping_postcode      = $order->shipping_postcode;
+            $shipping_city          = $order->shipping_city;
+            $shipping_country       = $order->shipping_country;
+
+            $usership = $order->billing_first_name.' '.$order->billing_last_name.' '.$order->billing_company;
+            $userbill = (isset($order->shipping_first_name) && isset($order->shipping_last_name) && isset($order->shipping_company)) ? $order->shipping_first_name.' '.$order->shipping_last_name.' '.$order->shipping_company : $usership;
+        }
+
+        if( strlen( $addr['firstname'] )) {
+            $name = $addr['firstname'];
+            $lastname = $addr['lastname'];
+            $company = '';
+            $apiName =  $addr['firstname'].' '.$addr['lastname'];
+            $usership = $billing_first_name.' '.$billing_last_name;
+            $displayname = $addr['firstname'].' '.$addr['lastname'];
+        } else {
+            $name = $_POST['billing_first_name'];
+            $lastname = $_POST['billing_last_name'];
+            $company  =  $addr['company'];
+            $usership = $billing_first_name.' '.$billing_last_name.' '.$billing_company;
+            $apiName =  $name.' '.$lastname.' '.$addr['company'];
+            $displayname = $billing_first_name.' '.$billing_last_name.'<br/>'.$addr['company'];
+        }
+
+        $addressNotMatched  = !isEqual( $usership,  $apiName) ||
+            !isEqual($addr['street'], $billmate_billing_address ) ||
+            !isEqual($addr['zip'], $billing_postcode) ||
+            !isEqual($addr['city'], $billing_city) ||
+            !isEqual(strtoupper($addr['country']), strtoupper($billing_country));
+
+        if(isset($shipping_address_1) && isset($shipping_postcode) && isset($shipping_city) && isset($shipping_country)) {
+            $shippingAndBilling = !isEqual($usership, $userbill) ||
+                !isEqual($billing_address_1, $shipping_address_1) ||
+                !isEqual($billing_postcode, $shipping_postcode) ||
+                !isEqual($billing_city, $shipping_city) ||
+                !isEqual($billing_country, $shipping_country);
+        } else {
+            $shippingAndBilling = false;
+        }
+
+		global $woocommerce;
+
+		$importedCountry = isset($addr['country']) ? $addr['country'] : '';
+
+		if( $addressNotMatched || $shippingAndBilling ){
+			if( empty($_POST['geturl'] ) ){
+				$html = $displayname.'<br>'.$addr['street'].'<br>'.$addr['zip'].' '.$addr['city'].'<br/>'.$importedCountry.'<div style="margin-top:1em"><input type="button" value="'.__('Yes, make purchase with this address','billmate').'" onclick="ajax_load(this);modalWin.HideModalPopUp(); " class="billmate_button"/></div><a onclick="noPressButton()" class="linktag">'.__('No, I want to specify a different number or change payment method','billmate').'</a>';
+				$html.= '<span id="hidden_data"><input type="hidden" id="_first_name" value="'.$name.'" />';
+				$html.= '<input type="hidden" id="_last_name" value="'.$lastname.'" />';
+				$html.= '<input type="hidden" id="_company" value="'.$company.'" />';
+				$html.= '<input type="hidden" id="_address_1" value="'.$addr['street'].'" />';
+				$html.= '<input type="hidden" id="_postcode" value="'.$addr['zip'].'" />';
+				$html.= '<input type="hidden" id="_city" value="'.$addr['city'].'" /></span>';
+				if(version_compare(WC_VERSION,'2.4.0','<')) {
+					echo $code = '<script type="text/javascript">setTimeout(function(){modalWin.ShowMessage(\'' . $html . '\',350,500,\'' . __('Pay by invoice can be made only to the address listed in the National Register. Would you like to make the purchase with address:', 'billmate') . '\');},1000);</script>';
+					//wc_bm_errors($code);
+					die;
+				} else {
+					$_SESSION['address_verification'] = '<script type="text/javascript">setTimeout(function(){modalWin.ShowMessage(\''.$html.'\',350,500,\''.__('Pay by invoice can be made only to the address listed in the National Register. Would you like to make the purchase with address:','billmate').'\');},1000);</script>';
+					wc_bm_errors(__('Pay by invoice can be made only to the address listed in the National Register. Would you like to make the purchase with address:','billmate'));
+					return false;
+				}
+			} else {
+                if ($billmateOrder->is_wc3()) {
+
+                    $order->set_billing_first_name($name);
+                    $order->set_billing_last_name($lastname);
+                    $order->set_billing_company($company);
+                    $order->set_billing_address_1($addr['street']);
+                    $order->set_billing_postcode($addr['zip']);
+                    $order->set_billing_city($addr['city']);
+                    $order->set_billing_country($addr['country']);
+
+                    $order->set_shipping_first_name($name);
+                    $order->set_shipping_last_name($lastname);
+                    $order->set_shipping_company($company);
+                    $order->set_shipping_address_1($addr['street']);
+                    $order->set_shipping_postcode($addr['zip']);
+                    $order->set_shipping_city($addr['city']);
+                    $order->set_shipping_country($addr['country']);
+
+                    $order->save();
+
+                } else {
+
+                    $order->billing_first_name = $order->shipping_first_name = $name;
+                    $order->billing_last_name = $order->shipping_last_name = $lastname;
+                    $order->billing_company = $order->shipping_company = $company;
+                    $order->billing_address_1 =  $order->shipping_address_1 = $addr['street'];
+                    $order->billing_postcode =  $order->shipping_postcode = $addr['zip'];
+                    $order->billing_city =  $order->shipping_city = $addr['city'];
+                    $order->billing_country =  $order->shipping_country = $addr['country'];
+                    $address = array(
+                        'first_name' => $name,
+                        'last_name'  => $lastname,
+                        'company'    => $company,
+                        'email'      => $order->billing_email,
+                        'phone'      => $order->billing_phone,
+                        'address_1'  => $addr['street'],
+                        'address_2'  => '',
+                        'city'       => $addr['city'],
+                        'state'      => '',
+                        'postcode'   => $addr['zip'],
+                        'country'    => $addr['country']
+                    );
+                    $order->set_address($address,'billing');
+                    $order->set_address($address,'shipping');
+                }
+                return true;
+			}
+		}
+	}
+	public function getAddress( )
+	{
+		// Collect the dob different depending on country
+        if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) {
+			$billmate_pno_day 			= isset($_POST['billmate_date_of_birth_day']) ? $this->woocommerce_clean($_POST['billmate_date_of_birth_day']) : '';
+			$billmate_pno_month 			= isset($_POST['billmate_date_of_birth_month']) ? $this->woocommerce_clean($_POST['billmate_date_of_birth_month']) : '';
+			$billmate_pno_year 			= isset($_POST['billmate_date_of_birth_year']) ? $this->woocommerce_clean($_POST['billmate_date_of_birth_year']) : '';
+			$billmate_pno 				= $billmate_pno_day . $billmate_pno_month . $billmate_pno_year;
+        } else {
+            if (isset($_POST['pno']) && $_POST['pno'] != '' && get_option('billmate_common_getaddress') == 'active') {
+                $billmate_pno = $this->woocommerce_clean($_POST['pno']);
+            } else {
+                $billmate_pno = isset($_POST['billmate_pno']) ? $this->woocommerce_clean($_POST['billmate_pno']) : '';
+            }
+        }
+
+		if($billmate_pno == ''){
+			return;
+		}
+		$billmate_gender 					= isset($_POST['billmate_gender']) ? $this->woocommerce_clean($_POST['billmate_gender']) : '';
+		$billmate_de_consent_terms		= isset($_POST['billmate_de_consent_terms']) ? $this->woocommerce_clean($_POST['billmate_de_consent_terms']) : '';
 		// Split address into House number and House extension for NL & DE customers
 		if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) :
 			require_once('split-address.php');
@@ -1207,7 +1521,7 @@ parse_str($_POST['post_data'], $datatemp);
 		$language = explode('_',get_locale());
 		if(!defined('BILLMATE_LANGUAGE')) define('BILLMATE_LANGUAGE',strtolower($language[0]));
 
-		$k = new Billmate($this->eid,$this->secret,true, $this->testmode == 'yes',false);
+		$k = new Billmate( $this->eid, $this->secret, true, $this->testmode == 'yes', false, $this->getRequestMeta() );
 		try{
 			$addr = $k->getAddress(array('pno' => $billmate_pno));
 		}catch( Exception $ex ){
@@ -1227,6 +1541,38 @@ parse_str($_POST['post_data'], $datatemp);
 		foreach($addr as $key => $value){
 			$addr[$key] = utf8_encode(utf8_decode($value));
 		}
+
+        $post2Trim = array(
+            "billing_address_1",
+            "billing_address_2",
+            "billing_first_name",
+            "billing_last_name",
+            "billing_city",
+            "billing_country",
+            "billing_postcode",
+            "shipping_address_1",
+            "shipping_address_2",
+            "shipping_city",
+            "shipping_company",
+            "shipping_country",
+            "shipping_first_name",
+            "shipping_last_name",
+            "shipping_postcode"
+        );
+
+        foreach($post2Trim AS $post2TrimKey) {
+            if(isset($_POST[$post2TrimKey]) AND is_string($_POST[$post2TrimKey])) {
+                $_POST[$post2TrimKey] = trim($_POST[$post2TrimKey]);
+            }
+        }
+
+        $addr2Trim = array("firstname", "lastname", "city", "company", "country", "street", "zip");
+        foreach($addr2Trim AS $addr2TrimKey) {
+            if(isset($addr[$addr2TrimKey]) AND is_string($addr[$addr2TrimKey])) {
+                $addr[$addr2TrimKey] = trim($addr[$addr2TrimKey]);
+            }
+        }
+
 		$fullname = $_POST['billing_last_name'].' '.$_POST['billing_first_name'];
 		$firstArr = explode(' ', $_POST['billing_last_name']);
 		$lastArr  = explode(' ', $_POST['billing_first_name']);
@@ -1247,6 +1593,11 @@ parse_str($_POST['post_data'], $datatemp);
 			$apiName =  $name.' '.$lastname.' '.$addr['company'];
 			$displayname = $_POST['billing_first_name'].' '.$_POST['billing_last_name'].'<br/>'.$addr['company'];
 		}
+
+        $usership = (is_string($usership)) ? trim($usership) : $usership;
+        $userbill = (is_string($userbill)) ? trim($userbill) : $userbill;
+        $apiName = (is_string($apiName)) ? trim($apiName) : $apiName;
+        $billmate_billing_address = (is_string($billmate_billing_address)) ? trim($billmate_billing_address) : $billmate_billing_address;
 
 		$addressNotMatched  = !isEqual( $usership,  $apiName) ||
 			!isEqual($addr['street'], $billmate_billing_address ) ||
@@ -1273,6 +1624,11 @@ parse_str($_POST['post_data'], $datatemp);
 				$html.= '<input type="hidden" id="_last_name" value="'.$lastname.'" />';
 				$html.= '<input type="hidden" id="_company" value="'.$company.'" />';
 				$html.= '<input type="hidden" id="_address_1" value="'.$addr['street'].'" />';
+
+                if(isset($_POST['billing_address_2']) AND $_POST['billing_address_2'] != "") {
+                    $html.= '<input type="hidden" id="_address_2" value="'.$this->woocommerce_clean($_POST['billing_address_2']).'" />';
+                }
+
 				$html.= '<input type="hidden" id="_postcode" value="'.$addr['zip'].'" />';
 				$html.= '<input type="hidden" id="_city" value="'.$addr['city'].'" /></span>';
 
@@ -1302,59 +1658,38 @@ parse_str($_POST['post_data'], $datatemp);
             return;
 		}
 
+
+        $billmateOrder = new BillmateOrder($order);
+
 		// Collect the dob different depending on country
-		if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) :
-			$billmate_pno_day 			= isset($_POST['date_of_birth_day']) ? woocommerce_clean($_POST['date_of_birth_day']) : '';
-			$billmate_pno_month 			= isset($_POST['date_of_birth_month']) ? woocommerce_clean($_POST['date_of_birth_month']) : '';
-			$billmate_pno_year 			= isset($_POST['date_of_birth_year']) ? woocommerce_clean($_POST['date_of_birth_year']) : '';
+        if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) {
+			$billmate_pno_day 			= isset($_POST['date_of_birth_day']) ? $this->woocommerce_clean($_POST['date_of_birth_day']) : '';
+			$billmate_pno_month 			= isset($_POST['date_of_birth_month']) ? $this->woocommerce_clean($_POST['date_of_birth_month']) : '';
+			$billmate_pno_year 			= isset($_POST['date_of_birth_year']) ? $this->woocommerce_clean($_POST['date_of_birth_year']) : '';
 			$billmate_pno 				= $billmate_pno_day . $billmate_pno_month . $billmate_pno_year;
-		else :
-			$billmate_pno 			= isset($_POST['billmate_pno']) ? woocommerce_clean($_POST['billmate_pno']) : '';
-		endif;
+        } else {
+            if (isset($_POST['pno']) && $_POST['pno'] != '' && get_option('billmate_common_getaddress') == 'active') {
+                $billmate_pno = $this->woocommerce_clean($_POST['pno']);
+            } else {
+                $billmate_pno = isset($_POST['billmate_pno']) ? $this->woocommerce_clean($_POST['billmate_pno']) : '';
+            }
+        }
 
 		if($billmate_pno == ''){
 			return;
 		}
 
-		$billmate_pclass 				= isset($_POST['billmate_partpayment_pclass']) ? woocommerce_clean($_POST['billmate_partpayment_pclass']) : '';
-		$billmate_gender 				= isset($_POST['billmate_partpayment_gender']) ? woocommerce_clean($_POST['billmate_partpayment_gender']) : '';
+		$billmate_pclass 				= isset($_POST['billmate_partpayment_pclass']) ? $this->woocommerce_clean($_POST['billmate_partpayment_pclass']) : '';
+		$billmate_gender 				= isset($_POST['billmate_partpayment_gender']) ? $this->woocommerce_clean($_POST['billmate_partpayment_gender']) : '';
 
-		$billmate_de_consent_terms	= isset($_POST['billmate_de_consent_terms']) ? woocommerce_clean($_POST['billmate_de_consent_terms']) : '';
-
-
-		// Split address into House number and House extension for NL & DE customers
-		if ( $this->shop_country == 'NL' || $this->shop_country == 'DE' ) :
-
-			require_once('split-address.php');
-
-			$billmate_billing_address				= $order->billing_address_1;
-			$splitted_address 					= splitAddress($billmate_billing_address);
-
-			$billmate_billing_address				= $splitted_address[0];
-			$billmate_billing_house_number		= $splitted_address[1];
-			$billmate_billing_house_extension		= $splitted_address[2];
-
-			$billmate_shipping_address			= $order->shipping_address_1;
-			$splitted_address 					= splitAddress($billmate_shipping_address);
-
-			$billmate_shipping_address			= $splitted_address[0];
-			$billmate_shipping_house_number		= $splitted_address[1];
-			$billmate_shipping_house_extension	= $splitted_address[2];
-
-		else :
-
-			$billmate_billing_address				= $order->billing_address_1;
-			$billmate_billing_house_number		= '';
-			$billmate_billing_house_extension		= '';
-
-			$billmate_shipping_address			= $order->shipping_address_1;
-			$billmate_shipping_house_number		= '';
-			$billmate_shipping_house_extension	= '';
-
-		endif;
+		$billmate_de_consent_terms	= isset($_POST['billmate_de_consent_terms']) ? $this->woocommerce_clean($_POST['billmate_de_consent_terms']) : '';
 
 
 
+
+
+
+        $billmateOrder->setCustomerPno($billmate_pno);
 
 		// Test mode or Live mode
 		if ( $this->testmode == 'yes' ):
@@ -1385,9 +1720,8 @@ parse_str($_POST['post_data'], $datatemp);
 
 
 
-		$k = new Billmate($eid,$secret,true, $this->testmode == 'yes',false);
-		$total = 0;
-		$totalTax = 0;
+		$k = new Billmate( $eid, $secret, true, $this->testmode == 'yes', false, $this->getRequestMeta() );
+
 		$orderValues = array();
 		$prepareDiscount = array();
 		$lang = explode('_',get_locale());
@@ -1403,120 +1737,23 @@ parse_str($_POST['post_data'], $datatemp);
 
 		);
 
-		$orderValues['PaymentInfo'] = array(
-			'paymentdate' => (string)date('Y-m-d'),
-			'yourreference' => $order->billing_first_name.' '.$order->billing_last_name
-		);
-		// Cart Contents
-		if (sizeof($order->get_items())>0) : foreach ($order->get_items() as $item) :
-			$_product = $order->get_product_from_item( $item );
-			if ($_product->exists() && $item['qty']) :
+        $orderValues['PaymentInfo'] = $billmateOrder->getPaymentInfoData();
 
-				// We manually calculate the tax percentage here
-				// is product taxable?
-				if ($_product->is_taxable())
-				{
-					$taxClass = $_product->get_tax_class();
-					$tax = new WC_Tax();
-					$rates = $tax->get_rates($taxClass);
-					$item_tax_percentage = 0;
-					foreach($rates as $row){
-						// Is it Compound Tax?
-						if(isset($row['compund']) && $row['compound'] == 'yes')
-							$item_tax_percentage += $row['rate'];
-						else
-							$item_tax_percentage = $row['rate'];
-					}
-				} else
-					$item_tax_percentage = 0;
+        $total = 0;
+        $totalTax = 0;
 
-				// apply_filters to item price so we can filter this if needed
-				$billmate_item_price_including_tax = round($order->get_item_total( $item, true )*100);
-				$billmate_item_standard_price = round($order->get_item_subtotal($item,true)*100);
-                $billmate_item_standard_price_without_tax = $billmate_item_standard_price / (1 + ((int)$item_tax_percentage / 100));
-				$discount = false;
-				if($billmate_item_price_including_tax != $billmate_item_standard_price){
-					$discount = true;
-				}
-				$item_price = apply_filters( 'billmate_item_price_including_tax', $billmate_item_price_including_tax);
+        /* Articles, fees, discount */
+        $orderValues['Articles'] = $billmateOrder->getArticlesData();
+        $total += $billmateOrder->getArticlesTotal();
+        $totalTax += $billmateOrder->getArticlesTotalTax();
 
-				if ( $_product->get_sku() ) {
-					$sku = $_product->get_sku();
-				} else {
-					$sku = $_product->id;
-				}
+        $shippingPrices = $billmateOrder->getCartShipping();
+        if ($shippingPrices['price'] > 0) {
+            $orderValues['Cart']['Shipping'] = $billmateOrder->getCartShippingData();
+            $total += $shippingPrices['price'];
+            $totalTax += $shippingPrices['tax'];
+        }
 
-				$priceExcl = round($item_price - (100 * $order->get_item_tax($item,false)));
-
-				$orderValues['Articles'][] = array(
-					'quantity'   => (int)$item['qty'],
-					'artnr'    => $sku,
-					'title'    => $item['name'],
-					'aprice'    =>  ($discount) ? ($billmate_item_standard_price_without_tax) : ($priceExcl),
-					'taxrate'      => (int)$item_tax_percentage,
-					'discount' => ($discount) ? round((1 - ($billmate_item_price_including_tax/$billmate_item_standard_price)) * 100 ,0) : 0,
-					'withouttax' => $item['qty'] * ($priceExcl)
-				);
-				$totalTemp = ($item['qty'] * ($priceExcl));
-				$total += $totalTemp;
-				$totalTax += ($totalTemp * $item_tax_percentage/100);
-				if(isset($prepareDiscount[$item_tax_percentage])){
-					$prepareDiscount[$item_tax_percentage] += $totalTemp;
-				} else {
-					$prepareDiscount[$item_tax_percentage] = $totalTemp;
-				}
-
-			endif;
-		endforeach; endif;
-
-		// Discount
-		if ($order->order_discount>0) :
-
-			// apply_filters to order discount so we can filter this if needed
-			$billmate_order_discount = $order->order_discount;
-			$order_discount = apply_filters( 'billmate_order_discount', $billmate_order_discount );
-			$total_value = $total;
-			foreach($prepareDiscount as $key => $value){
-				$percent = $value/$total_value;
-
-				$discountAmount = ($percent * $order_discount) * (1-($key/100)/(1+($key/100)));
-
-				$orderValues['Articles'][] = array(
-					'quantity'   => (int)1,
-					'artnr'    => "",
-					'title'    => sprintf(__('Discount %s%% tax', 'billmate'),round($key,0)),
-					'aprice'    => -($discountAmount*100), //+$item->unittax
-					'taxrate'      => (int)$key,
-					'discount' => (float)0,
-					'withouttax' => -($discountAmount*100)
-
-				);
-				$total -= ($discountAmount * 100);
-				$totalTax -= ($discountAmount * ($key/100))*100;
-
-			}
-
-		endif;
-
-		// Shipping
-		if ($order->order_shipping>0) :
-
-			// We manually calculate the shipping taxrate percentage here
-			$calculated_shipping_tax_percentage = ($order->order_shipping_tax/$order->order_shipping)*100; //25.00
-			$calculated_shipping_tax_decimal = ($order->order_shipping_tax/$order->order_shipping)+1; //0.25
-
-			// apply_filters to Shipping so we can filter this if needed
-			$billmate_shipping_price_including_tax = $order->order_shipping*$calculated_shipping_tax_decimal;
-			$shipping_price = apply_filters( 'billmate_shipping_price_including_tax', $billmate_shipping_price_including_tax );
-
-			$orderValues['Cart']['Shipping'] = array(
-				'withouttax'    => ($shipping_price-$order->order_shipping_tax)*100,
-				'taxrate'      => (int)$calculated_shipping_tax_percentage,
-
-			);
-			$total += ($shipping_price-$order->order_shipping_tax) * 100;
-			$totalTax += (($shipping_price-$order->order_shipping_tax) * ($calculated_shipping_tax_percentage/100))*100;
-		endif;
 		$round = (round(WC_Payment_Gateway::get_order_total() * 100)) - round($total + $totalTax,0);
 
 		$orderValues['Cart']['Total'] = array(
@@ -1526,76 +1763,12 @@ parse_str($_POST['post_data'], $datatemp);
 			'withtax' => round($total + $totalTax+ $round)
 		);
 
-		$this->getAddress();
-        $countryData = BillmateCountry::getSwedenData();
-		$countries = $woocommerce->countries->get_allowed_countries();
-		$countryname = (int)$order->billing_country != 'SE' ? utf8_decode ($countries[$order->billing_country]) : 209;
+        $orderValues['Customer'] = array();
+        $orderValues['Customer']['pno'] = $billmateOrder->getCustomerPnoData();
+        $orderValues['Customer']['nr'] = $billmateOrder->getCustomerNrData();
+        $orderValues['Customer']['Billing'] = $billmateOrder->getCustomerBillingData();
+        $orderValues['Customer']['Shipping'] = $billmateOrder->getCustomerShippingData();
 
-		$orderValues['Customer'] = array(
-			'pno' => $billmate_pno,
-			'nr' => empty($order->user_id ) || $order->user_id<= 0 ? '': $order->user_id,
-			'Billing' => array(
-				'firstname' => utf8_encode(utf8_decode($order->billing_first_name)),
-				'lastname' => utf8_encode(utf8_decode($order->billing_last_name)),
-				'company' => utf8_encode(utf8_decode($order->billing_company)),
-				'street' => utf8_encode(utf8_decode($billmate_billing_address)),
-				'street2' => utf8_encode(utf8_decode($order->billing_address_2)),
-				'zip' => $order->billing_postcode,
-				'city' => utf8_encode(utf8_decode($order->billing_city)),
-				'country' => $order->billing_country,
-				'phone' => $order->billing_phone,
-				'email' => $order->billing_email
-			)
-		);
-		// Shipping address
-		if ( $order->get_shipping_method() == '' ) {
-
-			$email = $order->billing_email;
-			$telno = ''; //We skip the normal land line phone, only one is needed.
-			$cellno = $order->billing_phone;
-			$company = utf8_encode(utf8_decode($order->billing_company));
-			$fname = utf8_encode(utf8_decode($order->billing_first_name));
-			$lname = utf8_encode(utf8_decode($order->billing_last_name));
-			$careof = utf8_encode(utf8_decode($order->billing_address_2));  //No care of; C/O.
-			$street = utf8_encode(utf8_decode($billmate_billing_address)); //For DE and NL specify street number in houseNo.
-			$zip = utf8_encode(utf8_decode($order->billing_postcode));
-			$city = utf8_encode(utf8_decode($order->billing_city));
-			$country = utf8_encode(utf8_decode($countries[$order->billing_country]));
-			$houseNo = utf8_encode(utf8_decode($billmate_billing_house_number)); //For DE and NL we need to specify houseNo.
-			$houseExt = utf8_encode(utf8_decode($billmate_billing_house_extension)); //Only required for NL.
-			$countryCode = $order->billing_country;
-
-		} else {
-			$email = $order->billing_email;
-			$telno = ''; //We skip the normal land line phone; only one is needed.
-			$cellno = $order->billing_phone;
-			$company = utf8_encode(utf8_decode($order->shipping_company));
-			$fname = utf8_encode(utf8_decode($order->shipping_first_name));
-			$lname = utf8_encode(utf8_decode($order->shipping_last_name));
-			$careof = utf8_encode(utf8_decode($order->shipping_address_2));  //No care of; C/O.
-			$street = utf8_encode(utf8_decode($billmate_shipping_address)); //For DE and NL specify street number in houseNo.
-			$zip = utf8_encode(utf8_decode($order->shipping_postcode));
-			$city = utf8_encode(utf8_decode($order->shipping_city));
-			$country = utf8_encode(utf8_decode($countries[$order->shipping_country]));
-			$houseNo = utf8_encode(utf8_decode($billmate_shipping_house_number)); //For DE and NL we need to specify houseNo.
-			$houseExt = utf8_encode(utf8_decode($billmate_shipping_house_extension)); //Only required for NL.
-			$countryCode = $order->shipping_country;
-
-		}
-
-		$orderValues['Customer']['Shipping'] = array(
-			'firstname' => $fname,
-			'lastname' => $lname,
-			'company' => $company,
-			'street' => $street,
-			'zip' => $zip,
-			'city' => $city,
-			'country' => $order->billing_country,
-			'phone' => $cellno
-		);
-
-		//Normal shipment is defaulted, delays the start of invoice expiration/due-date.
-		// $k->setShipmentInfo('delay_adjust', BillmateFlags::EXPRESS_SHIPMENT);
 		try {
 
     		$result = $k->addPayment($orderValues);
@@ -1605,14 +1778,23 @@ parse_str($_POST['post_data'], $datatemp);
 			// If there are any errors
 			if(isset($result['code'])){
 				switch($result['code']){
-					/*case '1001':
-						$order->add_order_note( __('Billmate payment denied.', 'billmate') );
-						wc_bm_errors( __('Billmate payment denied.', 'billmate') );
-						return;
-						break;*/
 
-					//case '1001':
-					//case '2207':
+                    case '2401':
+                    case '2402':
+                    case '2403':
+                    case '2404':
+                    case '2405':
+                        // Address not matching
+                        if(!isset($_GET['pay_for_order'])) {
+                            $this->getAddress();
+                            die();
+                        } else {
+                            if(!$this->getAddressPayment($order)){
+                                return array('result' => 'error');
+                            }
+                        }
+                    break;
+
 					case '9015':
 					case '9016':
 						wc_bm_errors( '<i data-error-code="'.$result['code'].'"></i>'.__($result['message'], 'billmate') );
@@ -1632,104 +1814,89 @@ parse_str($_POST['post_data'], $datatemp);
 			}
     		// Retreive response
 
-			$invno = $result['number'];
-			switch($result['status']) {
-				case 'OK':
-				case 'Created':
-					$order->add_order_note( __('Billmate payment completed. Billmate Invoice number:', 'billmate') . $invno );
-					add_post_meta($order_id,'billmate_invoice_id',$invno);
+            $invno = (isset($result['number'])) ? $result['number'] : '';
 
-					// Payment complete
-					if($this->order_status == 'default')
-					{
-						$order->payment_complete();
-					} else {
-						$order->update_status($this->order_status);
-					}
+            if (!isset($result['code']) AND isset($result['status'])) {
+                switch($result['status']) {
+                    case 'OK':
+                    case 'Created':
+                        $order->add_order_note( __('Billmate payment completed. Billmate Invoice number:', 'billmate') . $invno );
+                        add_post_meta($order_id,'billmate_invoice_id',$invno);
 
-					// Remove cart
-					$woocommerce->cart->empty_cart();
+                        // Payment complete
+                        $order->payment_complete();
+                        if ($this->order_status != 'default') {
+                            $order->update_status($this->order_status);
+                            $order->save();
+                        }
 
-					if(version_compare(WC_VERSION, '2.0.0', '<')){
-						$redirect = add_query_arg('key', $order->order_key, add_query_arg('order', $order_id, get_permalink(get_option('woocommerce_thanks_page_id'))));
-					} else {
-						$redirect = $this->get_return_url($order);
-					}
+                        // Remove cart
+                        $woocommerce->cart->empty_cart();
+                        if (version_compare(WC_VERSION, '2.0.0', '<')) {
+                            $redirect = add_query_arg('key', $order->order_key, add_query_arg('order', $order_id, get_permalink(get_option('woocommerce_thanks_page_id'))));
+                        } else {
+                            $redirect = $this->get_return_url($order);
+                        }
 
+                        // Return thank you redirect
+                        return array(
+                            'result'    => 'success',
+                            'redirect'  => $redirect
+                        );
 
-					// Return thank you redirect
-					return array(
-						'result' 	=> 'success',
-						'redirect'	=> $redirect
-					);
+                        break;
+                    case 'Pending':
+                        $order->add_order_note( __('Order is PENDING APPROVAL by Billmate. Please visit Billmate Online for the latest status on this order. Billmate Invoice number: ', 'billmate') . $invno );
+                        add_post_meta($order_id,'billmate_invoice_id',$invno);
 
-					break;
-				case 'Pending':
-					$order->add_order_note( __('Order is PENDING APPROVAL by Billmate. Please visit Billmate Online for the latest status on this order. Billmate Invoice number: ', 'billmate') . $invno );
-					add_post_meta($order_id,'billmate_invoice_id',$invno);
+                        // Payment complete
+                        $order->payment_complete();
+                        if ($this->order_status != 'default') {
+                            $order->update_status($this->order_status);
+                            $order->save();
+                        }
 
-					// Payment complete
-					if($this->order_status == 'default')
-					{
-						$order->payment_complete();
-					} else {
-						$order->update_status($this->order_status);
-					}
+                        // Remove cart
+                        $woocommerce->cart->empty_cart();
+                        if (version_compare(WC_VERSION, '2.0.0', '<')) {
+                            $redirect = add_query_arg('key', $order->order_key, add_query_arg('order', $order_id, get_permalink(get_option('woocommerce_thanks_page_id'))));
+                        } else {
+                            $redirect = $this->get_return_url($order);
+                        }
 
-					// Remove cart
-					$woocommerce->cart->empty_cart();
-					if(version_compare(WC_VERSION, '2.0.0', '<')){
-						$redirect = add_query_arg('key', $order->order_key, add_query_arg('order', $order_id, get_permalink(get_option('woocommerce_thanks_page_id'))));
-					} else {
-						$redirect = $this->get_return_url($order);
-					}
+                        // Return thank you redirect
+                        return array(
+                            'result'    => 'success',
+                            'redirect'  => $redirect
+                        );
 
+                        break;
+                    default:
+                        //Unknown response, store it in a database.
+                        $order->add_order_note( __('Unknown response from Billmate.', 'billmate') );
+                        wc_bm_errors( __('Unknown response from Billmate.', 'billmate') );
+                        return;
+                        break;
+                }
+            }
 
-					// Return thank you redirect
-					return array(
-						'result' 	=> 'success',
-						'redirect'	=> $redirect
-					);
+        } catch(Exception $e) {
+            //The purchase was denied or something went wrong, print the message:
+            if(!isset($_GET['pay_for_order'])) {
+                if(version_compare(WC_VERSION,'2.4.0','<')) {
+                    echo '<ul class="woocommerce-error"><li>'.sprintf(__('%s (Error code: %s)', 'billmate'), utf8_encode($e->getMessage()), $e->getCode() ).'<script type="text/javascript">jQuery("#billmategeturl").remove();</script></li></ul>';
 
-					break;
-				/*case BillmateFlags::DENIED:
-                    //Order is denied, store it in a database.
-                    $order->add_order_note( __('Billmate payment denied.', 'billmate') );
-                    wc_bm_errors( __('Billmate payment denied.', 'billmate') );
-                    return;
-                    break;*/
-				default:
-					//Unknown response, store it in a database.
-					$order->add_order_note( __('Unknown response from Billmate.', 'billmate') );
-					wc_bm_errors( __('Unknown response from Billmate.', 'billmate') );
-					return;
-					break;
-			}
+                    die();
+                } else {
+                    $code['messages'] =  '<ul class="woocommerce-error"><li>'.sprintf(__('%s (Error code: %s)', 'billmate'), utf8_encode($e->getMessage()), $e->getCode() ).'<script type="text/javascript">jQuery("#billmategeturl").remove();</script></li></ul>';
 
-
-			}catch(Exception $e) {
-    		//The purchase was denied or something went wrong, print the message:
-			switch($e->getCode()){
-				case '9015':
-				case '9016':
-					if(version_compare(WC_VERSION,'2.4.0','<')) {
-						echo '<ul class="woocommerce-error"><li>'.sprintf(__('%s (Error code: %s)', 'billmate'), utf8_encode($e->getMessage()), $e->getCode() ).'<script type="text/javascript">jQuery("#billmategeturl").remove();</script></li></ul>';
-
-						die;
-					} else {
-						$code['messages'] =  '<ul class="woocommerce-error"><li>'.sprintf(__('%s (Error code: %s)', 'billmate'), utf8_encode($e->getMessage()), $e->getCode() ).'<script type="text/javascript">jQuery("#billmategeturl").remove();</script></li></ul>';
-
-						echo json_encode($code);
-						die;
-					}
-					break;
-				default:
-					throw new Exception(utf8_encode($e->getMessage()),$e->getCode());
-					break;
-			}
-		}
-
-
+                    echo json_encode($code);
+                    die();
+                }
+            } else {
+                echo '<ul class="woocommerce-error"><li>'.sprintf(__('%s (Error code: %s)', 'billmate'), utf8_encode($e->getMessage()), $e->getCode() ).'<script type="text/javascript">jQuery("#billmategeturl").remove(); </script></li></ul>';
+            }
+        }
 	}
 
 	/**
@@ -1741,26 +1908,68 @@ parse_str($_POST['post_data'], $datatemp);
 
 	}
 
-	/**
-	 * Calc monthly cost on single Product page and print it out
-	 **/
+    /**
+     * Calc monthly cost on single Product page and print it out when partpayment and/or checkout is enabled
+     * @return void
+     **/
+    static function print_product_monthly_cost() {
 
-	function print_product_monthly_cost() {
+        $queried_object = get_queried_object();
 
-		if ( $this->enabled!="yes" ) return;
-		if (!in_array(get_option('woocommerce_currency'), array('SEK'))) return false;
+        /* Settings */
+        $settings = get_option('woocommerce_billmate_partpayment_settings');
+        $eid = get_option('billmate_common_eid');
+        $enabled = (isset($settings['enabled'])) ? $settings['enabled'] : '';
+
+        // If partpayment is not enabled, check if Billmate Checkout is enabled.
+        if ( $enabled != "yes" ) {
+            $checkout_settings = get_option( "woocommerce_billmate_checkout_settings", array() );
+            $enabled = ( isset( $checkout_settings['enabled']) && $checkout_settings['enabled'] == 'yes' ) ? 'yes' : $enabled;
+        }
+
+        if ($enabled != "yes" OR $eid == '') {
+            return;
+        }
+
+        $show_monthly_cost = (isset($settings['show_monthly_cost'])) ? $settings['show_monthly_cost'] : '';
+        $show_monthly_cost_info = (isset($settings['show_monthly_cost_info'])) ? $settings['show_monthly_cost_info'] : '';
+        $testmode = (isset($settings['testmode'])) ? $settings['testmode'] : '';
+        $lower_threshold_monthly_cost = (isset($settings['lower_threshold_monthly_cost'])) ? $settings['lower_threshold_monthly_cost'] : '';
+        $upper_threshold_monthly_cost = (isset($settings['upper_threshold_monthly_cost'])) ? $settings['upper_threshold_monthly_cost'] : '';
+
+        $lower_threshold_monthly_cost = ($lower_threshold_monthly_cost != '') ? $lower_threshold_monthly_cost : 0;
+        $upper_threshold_monthly_cost = ($upper_threshold_monthly_cost != '') ? $upper_threshold_monthly_cost : 10000000;
+
+        $country_data = self::get_country_data();
+        $billmate_country = isset($country_data['billmate_country']) ? $country_data['billmate_country'] : '';
+        $billmate_language = isset($country_data['billmate_language']) ? $country_data['billmate_language'] : '';
+        $billmate_currency = isset($country_data['billmate_currency']) ? $country_data['billmate_currency'] : '';
+        $billmate_partpayment_info = isset($country_data['billmate_partpayment_info']) ? $country_data['billmate_partpayment_info'] : '';
+        $billmate_partpayment_icon = isset($country_data['billmate_partpayment_icon']) ? $country_data['billmate_partpayment_icon'] : '';
+        $billmate_basic_icon = isset($country_data['billmate_basic_icon']) ? $country_data['billmate_basic_icon'] : '';
+
+        $billmate_country                     = apply_filters( 'billmate_country', $billmate_country );
+        $billmate_language                    = apply_filters( 'billmate_language', $billmate_language );
+        $billmate_currency                    = apply_filters( 'billmate_currency', $billmate_currency );
+        $billmate_partpayment_info            = apply_filters( 'billmate_partpayment_info', $billmate_partpayment_info );
+        $icon                                 = apply_filters( 'billmate_partpayment_icon', $billmate_partpayment_icon );
+        $icon_basic                           = apply_filters( 'billmate_basic_icon', $billmate_basic_icon );
+
+        if (!in_array(get_option('woocommerce_currency'), array('SEK')) OR get_woocommerce_currency() != 'SEK') {
+            return false;
+        }
 
 		//global $woocommerce, $product, $billmate_partpayment_shortcode_currency, $billmate_partpayment_shortcode_price, $billmate_partpayment_shortcode_img, $billmate_partpayment_shortcode_info_link;
 		global $woocommerce, $product, $billmate_partpayment_shortcode_currency, $billmate_partpayment_shortcode_price, $billmate_shortcode_img, $billmate_partpayment_country,$billmate_partpayment_eid;
 
 		$pclasses = get_option('wc_gateway_billmate_partpayment_pclasses',false);
-		$billmate_partpayment_eid = $this->eid;
+		$billmate_partpayment_eid = $eid;
 
 	 	// Only execute this if the feature is activated in the gateway settings
-		if ( $this->show_monthly_cost == 'yes' && is_array($pclasses) ) {
+		if ( $show_monthly_cost == 'yes' && is_array($pclasses) ) {
 
 			// Test mode or Live mode
-			if ( $this->testmode == 'yes' ):
+			if ( $testmode == 'yes' ):
 				// Disable SSL if in testmode
 				$billmate_ssl = 'false';
 				$billmate_mode = 'test';
@@ -1773,19 +1982,6 @@ parse_str($_POST['post_data'], $datatemp);
 				}
 				$billmate_mode = 'live';
 			endif;
-
-	   		if( empty( $this->eid) ){
-	   		    return false;
-	   		}
-
-			$eid = (int)$this->eid;
-			$secret = $this->secret;
-			$country = $this->billmate_country;
-			$language = $this->billmate_language;
-			$currency = $this->billmate_currency;
-
-
-			$k = new BillMate($eid,$secret,true,false, $this->testmode == 'yes');
 
 			$pcURI = BILLMATE_DIR . 'srv/billmatepclasses.json';
 			$pclasses_not_available = true;
@@ -1808,29 +2004,16 @@ parse_str($_POST['post_data'], $datatemp);
    		    	$flag
    				);
 
-	    		// Asign values to variables used for shortcodes.
-	    		$billmate_partpayment_shortcode_currency = $this->billmate_currency;
-	    		$billmate_partpayment_shortcode_price = $value;
-	    		$billmate_shortcode_img = $this->icon_basic;
-	    		$billmate_partpayment_country = $this->billmate_country;
-	    		//$billmate_partpayment_shortcode_info_link = $this->billmate_partpayment_info;
-
-
-
 	    		/* $value is now a rounded monthly cost amount to be displayed to the customer. */
-	    		// apply_filters to the monthly cost message so we can filter this if needed
+                if ( $lower_threshold_monthly_cost < $sum && $upper_threshold_monthly_cost > $sum ) {
 
-	    		//$billmate_partpayment_product_monthly_cost_message = sprintf(__('<img src="%s" /> <br/><a href="%s" target="_blank">Part pay from %s %s/month</a>', 'billmate'), $this->icon, $this->billmate_partpayment_info, $value, $this->billmate_currency );
+                    // Asign values to variables used for shortcodes.
+                    $billmate_partpayment_shortcode_currency = $billmate_currency;
+                    $billmate_partpayment_shortcode_price = $value;
+                    $billmate_shortcode_img = $icon_basic;
+                    $billmate_partpayment_country = $billmate_country;
 
-	    		// Monthly cost threshold check. This is done after apply_filters to product price ($sum).
-		    	if ( $this->lower_threshold_monthly_cost < $sum && $this->upper_threshold_monthly_cost > $sum ) {
-
-		    		echo '<div class="billmate-product-monthly-cost">' . do_shortcode( $this->show_monthly_cost_info );
-
-		    		// Show billmate_warning_banner if NL
-					if ( $this->shop_country == 'NL' ) {
-						echo '<img src="' . $this->billmate_wb_img_single_product . '" class="billmate-wb" style="max-width: 100%;"/>';
-					}
+                    echo '<div class="billmate-product-monthly-cost">' . do_shortcode( $show_monthly_cost_info );
 		    		echo '</div>';
 
 		    	}
@@ -1849,7 +2032,9 @@ parse_str($_POST['post_data'], $datatemp);
  	function print_product_monthly_cost_shop() {
 
  		if ( $this->enabled!="yes" ) return;
-	    if (!in_array(get_option('woocommerce_currency'), array('SEK'))) return false;
+        if (!in_array(get_option('woocommerce_currency'), array('SEK')) OR get_woocommerce_currency() != 'SEK') {
+            return false;
+        }
  		//global $woocommerce, $product, $billmate_partpayment_shortcode_currency, $billmate_partpayment_shortcode_price, $billmate_partpayment_shortcode_img, $billmate_partpayment_shortcode_info_link;
  		global $woocommerce, $product, $billmate_partpayment_shortcode_currency, $billmate_partpayment_shortcode_price, $billmate_shortcode_img, $billmate_partpayment_country;
 
@@ -1883,7 +2068,7 @@ parse_str($_POST['post_data'], $datatemp);
 			$currency = $this->billmate_currency;
 
 
-			$k = new BillMate($eid,$secret,true,false, $this->testmode == 'yes');
+			$k = new BillMate( $eid, $secret, true, false, $this->testmode == 'yes', false, $this->getRequestMeta() );
 
 			$pclasses_not_available = true;
 			if($pclasses) $pclasses_not_available = false;
@@ -1965,12 +2150,21 @@ parse_str($_POST['post_data'], $datatemp);
 	function get_terms_country() {
 		global $woocommerce;
 
-		if ( $woocommerce->customer->get_country() == true && in_array( $woocommerce->customer->get_country(), array('SE', 'NO', 'DK', 'DE', 'FI', 'NL') ) ) {
+        $country = "";
+        if(isset($woocommerce) &&
+            is_object($woocommerce) &&
+            isset($woocommerce->customer) &&
+            is_object($woocommerce->customer)
+        ) {
+            if(version_compare(WC_VERSION, '3.0.0', '>=') AND method_exists($woocommerce->customer, "get_billing_country")) {
+                $country = $woocommerce->customer->get_billing_country();
+            } elseif(method_exists($woocommerce->customer, "get_country")) {
+                $country = $woocommerce->customer->get_country();
+            }
+        }
 
-			//
-			//return strtolower($woocommerce->customer->get_country());
-			return strtolower($this->billmate_country);
-
+        if($country != "" AND in_array($country, array('SE', 'NO', 'DK', 'DE', 'FI', 'NL'))) {
+			return strtolower($country);
 		} else {
 
 			return strtolower($this->billmate_country);
@@ -2027,6 +2221,13 @@ parse_str($_POST['post_data'], $datatemp);
 	}
 
 
+
+    private function woocommerce_clean($var = "") {
+        if(version_compare(WC_VERSION, '3.0.0', '>=')) {
+            return wc_clean($var);
+        }
+        return woocommerce_clean($var);
+    }
 
 
 } // End class WC_Gateway_Billmate_Partpayment
