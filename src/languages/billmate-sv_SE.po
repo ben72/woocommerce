@@ -589,8 +589,7 @@ msgstr ""
 msgid ""
 "Please confirm the email %s is correct. The email will be used for invoicing."
 msgstr ""
-"Vänligen bekräfta att e-postadressen \"%s\" är korrekt. Denna kommer att "
-"användas för fakturering."
+"Vänligen bekräfta att e-postadressen "%s" är korrekt genom att markera kryssrutan nedan för att gå vidare med beställningen."
 
 #: ../class-billmate-account.php:1487 ../class-billmate-bankpay.php:626
 #: ../class-billmate-cardpay.php:652 ../class-billmate-cardpay.php:921
